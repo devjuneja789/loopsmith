@@ -7,6 +7,7 @@ import typer
 from loopsmith import __version__, paths
 from loopsmith.cli import (
     approve_cmd,
+    benchmark_cmd,
     eval_cmd,
     export_cmd,
     mine_cmd,
@@ -22,6 +23,8 @@ app = typer.Typer(
 )
 app.add_typer(traces_cmd.app, name="traces", help="Inspect imported traces")
 app.add_typer(proposals_cmd.app, name="proposals", help="Review refinement proposals")
+app.add_typer(benchmark_cmd.app, name="benchmark",
+              help="Inspect and smoke-test the eval scenario pack")
 app.command(name="mine")(mine_cmd.mine)
 app.command(name="eval")(eval_cmd.evaluate)
 app.command(name="approve")(approve_cmd.approve)

@@ -18,6 +18,7 @@ from loopsmith.core.models import (
     EvalRun,
     Evidence,
     Proposal,
+    ScenarioResult,
 )
 from loopsmith.core.util import new_id, now_utc
 from loopsmith.traces.schema import SessionMeta, Trace, TraceEvent
@@ -421,6 +422,45 @@ class Store:
             )
             for r in rows
         ]
+
+    def add_result(self, run_id: str, result: ScenarioResult) -> None:
+        with self.tx():
+            self._conn.execute(
+                "INSERT INTO eval_results (id, run_id, scenario_id, arm, run_ix, success, "
+                "score, tokens_in, tokens_out, turns, wall_s, transcript_path) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (new_id("x"), run_id, result.scenario_id, result.arm, result.run_ix,
+                 1 if result.success else 0, result.score, result.tokens_in,
+                 result.tokens_out, result.turns, result.wall_s, result.transcript_path),
+            )
+
+    def results_for(self, run_id: str) -> list[ScenarioResult]:
+        rows = self._conn.execute(
+            "SELECT * FROM eval_results WHERE run_id = ? ORDER BY scenario_id, arm, run_ix",
+            (run_id,))
+        return [self._result_from_row(r) for r in rows]
+
+    @staticmethod
+    def _result_from_row(r: sqlite3.Row) -> ScenarioResult:
+        return ScenarioResult(
+            scenario_id=r["scenario_id"], arm=r["arm"], run_ix=r["run_ix"],
+            success=bool(r["success"]), score=r["score"], tokens_in=r["tokens_in"] or 0,
+            tokens_out=r["tokens_out"] or 0, turns=r["turns"] or 0,
+            wall_s=r["wall_s"] or 0.0, transcript_path=r["transcript_path"],
+        )
+
+    def cached_result(self, benchmark_hash: str, pack_hash: str, model: str | None,
+                      scenario_id: str, arm: str, run_ix: int) -> ScenarioResult | None:
+        """Reuse an identical prior run: same benchmark, pack, model, arm, repetition."""
+        row = self._row(
+            "SELECT r.* FROM eval_results r JOIN eval_runs e ON r.run_id = e.id "
+            "WHERE e.benchmark_hash = ? AND e.model IS ? AND r.scenario_id = ? "
+            "  AND r.arm = ? AND r.run_ix = ? "
+            "  AND (CASE WHEN r.arm = 'baseline' THEN e.baseline_pack_hash "
+            "            ELSE e.candidate_pack_hash END) = ? "
+            "ORDER BY e.started_at DESC LIMIT 1",
+            (benchmark_hash, model, scenario_id, arm, run_ix, pack_hash))
+        return self._result_from_row(row) if row else None
 
     # -- audit ---------------------------------------------------------------
 

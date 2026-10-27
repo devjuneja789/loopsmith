@@ -50,11 +50,11 @@ $pending = @(lsm proposals list --status pending --format ids)[0]
 lsm proposals diff $pending
 lsm eval $pending
 lsm approve $pending --yes --force
-lsm history instruction use-make-test
+lsm history instruction use-python-runtests-py
 
 Write-Host "`n== 8. rollback: the gate is reversible ==" -ForegroundColor Cyan
-lsm rollback instruction use-make-test
-lsm history instruction use-make-test
+lsm rollback instruction use-python-runtests-py
+lsm history instruction use-python-runtests-py
 lsm export --format agents
 Get-Content dist/AGENTS.md
 

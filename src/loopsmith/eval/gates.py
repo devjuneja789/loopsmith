@@ -106,8 +106,15 @@ def static_gates(store: Store, proposal: Proposal) -> GateReport:
     return GateReport(checks=checks)
 
 
-def evaluate(store: Store, proposal_id: str, llm: LLMConfig | None = None) -> EvalRun:
-    """Run gates on a proposal and record the verdict as an EvalRun."""
+def evaluate(store: Store, proposal_id: str, llm: LLMConfig | None = None,
+             benchmark: str | None = None, runs: int = 1,
+             runs_dir=None) -> EvalRun:
+    """Run gates on a proposal and record the verdict as an EvalRun.
+
+    Static gates always run. When a model endpoint is configured and a
+    benchmark pack is available, a behavioral A/B run decides the verdict;
+    otherwise the verdict is `not_run` and approval needs `--force`.
+    """
     proposal = store.get_proposal(proposal_id)
     if proposal is None:
         raise GateError(f"no proposal {proposal_id}")
@@ -116,39 +123,75 @@ def evaluate(store: Store, proposal_id: str, llm: LLMConfig | None = None) -> Ev
 
     started = now_utc()
     report = static_gates(store, proposal)
+    static_summary = [asdict(c) for c in report.checks]
     baseline_hash = versioning.pack_hash(versioning.pack_markdown(store))
-    candidate_hash = versioning.pack_hash(versioning.pack_markdown(store, extra=proposal))
+    candidate_hash = versioning.pack_hash(
+        versioning.pack_markdown(store, extra=proposal))
 
-    behavioral: str
     if not report.passed:
-        verdict = "reject"
-        behavioral = "not reached: static gates failed"
-    elif llm is not None and llm.configured:
-        # P1: the benchmark A/B runner plugs in here; until then the
-        # configured endpoint is recorded but the run is not executed.
-        verdict = "not_run"
-        behavioral = f"planned with model {llm.model} (P1 runner pending)"
-    else:
-        verdict = "not_run"
-        behavioral = "skipped: no model configured; approval requires --force"
+        run = EvalRun(
+            id=new_id("r"), proposal_id=proposal.id,
+            params={"stage": "static", "max_body_chars": MAX_BODY_CHARS},
+            baseline_pack_hash=baseline_hash, candidate_pack_hash=candidate_hash,
+            verdict="reject",
+            summary={"static": static_summary, "static_passed": False,
+                     "behavioral": "not reached: static gates failed"},
+            started_at=started, finished_at=now_utc(),
+        )
+        _store_and_close(store, proposal, run)
+        return run
+
+    if llm is not None and llm.configured:
+        from loopsmith.eval.llm import LLMClient
+        from loopsmith.eval.runner import run_ab
+        from loopsmith.eval.scenarios import PackError, load_pack, resolve_pack_root
+
+        try:
+            pack = load_pack(resolve_pack_root(benchmark))
+        except PackError as exc:
+            run = EvalRun(
+                id=new_id("r"), proposal_id=proposal.id, model=llm.model,
+                params={"stage": "static", "max_body_chars": MAX_BODY_CHARS},
+                baseline_pack_hash=baseline_hash, candidate_pack_hash=candidate_hash,
+                verdict="not_run",
+                summary={"static": static_summary, "static_passed": True,
+                         "behavioral": f"benchmark unavailable: {exc}"},
+                started_at=started, finished_at=now_utc(),
+            )
+            _store_and_close(store, proposal, run)
+            return run
+
+        client = LLMClient(llm)
+        run = run_ab(store, proposal, pack, client, runs=runs, runs_dir=runs_dir)
+        run.summary["static"] = static_summary
+        run.summary["static_passed"] = True
+        run.summary.setdefault("behavioral", "A/B benchmark")
+        store.update_eval_run(run)
+        _close(store, proposal, run)
+        return run
 
     run = EvalRun(
         id=new_id("r"), proposal_id=proposal.id,
-        model=llm.model if (llm and llm.configured) else None,
         params={"stage": "static", "max_body_chars": MAX_BODY_CHARS},
         baseline_pack_hash=baseline_hash, candidate_pack_hash=candidate_hash,
-        verdict=verdict,  # type: ignore[arg-type]
-        summary={
-            "static": [asdict(c) for c in report.checks],
-            "behavioral": behavioral,
-            "static_passed": report.passed,
-        },
+        verdict="not_run",
+        summary={"static": static_summary, "static_passed": True,
+                 "behavioral": "skipped: no model configured; approval requires --force"},
         started_at=started, finished_at=now_utc(),
     )
+    _store_and_close(store, proposal, run)
+    return run
+
+
+def _store_and_close(store: Store, proposal: Proposal, run: EvalRun) -> None:
     store.add_eval_run(run)
+    _close(store, proposal, run)
+
+
+def _close(store: Store, proposal: Proposal, run: EvalRun) -> None:
     store.set_proposal_status(proposal.id, "evaluated")
     store.log("evaluated", {
-        "proposal_id": proposal.id, "verdict": verdict,
-        "static_passed": report.passed,
+        "proposal_id": proposal.id, "verdict": run.verdict,
+        "static_passed": bool(run.summary.get("static_passed")),
+        "model": run.model,
     })
-    return run

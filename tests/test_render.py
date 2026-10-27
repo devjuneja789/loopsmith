@@ -27,7 +27,7 @@ def test_agents_md_contains_managed_block(populated_store, tmp_path):
     path = render.export_agents_md(store, tmp_path / "AGENTS.md")
     text = path.read_text(encoding="utf-8")
     assert render.MARK_BEGIN in text and render.MARK_END in text
-    assert "use-make-test" in text
+    assert "use-python-runtests-py" in text
     assert "version=1" in text
 
 
@@ -44,7 +44,7 @@ def test_agents_md_patches_existing_block(populated_store, tmp_path):
     assert "Human notes stay." in text
     assert "footer" in text
     assert "stale content" not in text
-    assert "use-make-test" in text
+    assert "use-python-runtests-py" in text
 
 
 def test_agents_md_appends_when_markers_missing(populated_store, tmp_path):

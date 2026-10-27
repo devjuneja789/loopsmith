@@ -7,7 +7,7 @@ def test_mine_produces_expected_three(populated_store):
     assert len(proposals) == 3
     names = {(p.kind, p.name) for p in proposals}
     assert names == {
-        ("instruction", "use-make-test"),
+        ("instruction", "use-python-runtests-py"),
         ("memory", "flaky-test-auth-login"),
         ("skill", "verify-after-edit"),
     }
@@ -33,12 +33,12 @@ def test_skill_merges_all_fix_verify_cycles(populated_store):
     heuristics.mine(populated_store)
     proposal = find_proposal(populated_store, "skill", "verify-after-edit")
     assert len(proposal.evidence) == 2
-    assert "make test" in proposal.body_md
+    assert "python runtests.py" in proposal.body_md
 
 
 def test_instruction_merges_correction_and_frequency(populated_store):
     heuristics.mine(populated_store)
-    proposal = find_proposal(populated_store, "instruction", "use-make-test")
+    proposal = find_proposal(populated_store, "instruction", "use-python-runtests-py")
     patterns = {ev.pattern for ev in proposal.evidence}
     assert patterns == {"user_correction", "command_frequency"}
     assert "Corroboration" in proposal.body_md
@@ -69,7 +69,7 @@ def test_new_evidence_yields_update_proposal(populated_store):
     new = heuristics.mine(populated_store)
     assert len(new) == 1
     assert new[0].op == "update"
-    assert new[0].name == "use-make-test"
+    assert new[0].name == "use-python-runtests-py"
     assert new[0].target_n == 1
     assert "2 user correction(s)" in new[0].body_md
 
@@ -79,5 +79,5 @@ def test_mining_without_traces_is_empty(store):
 
 
 def test_slugify():
-    assert heuristics.slugify("make test -k test_auth_login") == "make-test-k-test-auth-login"
+    assert heuristics.slugify("python runtests.py -k test_auth_login") == "python-runtests-py-k-test-auth-login"
     assert heuristics.slugify("!!!") == "unnamed"

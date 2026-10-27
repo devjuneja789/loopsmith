@@ -50,10 +50,10 @@ def test_create_of_existing_entry_is_stale(populated_store):
     from conftest import promote_forced
 
     heuristics.mine(populated_store)
-    existing = find_proposal(populated_store, "instruction", "use-make-test")
+    existing = find_proposal(populated_store, "instruction", "use-python-runtests-py")
     promote_forced(populated_store, existing)
     candidate = _proposal(
-        name="use-make-test", kind="instruction", op="create",
+        name="use-python-runtests-py", kind="instruction", op="create",
         evidence=[Evidence(trace_id=existing.evidence[0].trace_id,
                            event_refs=[1], pattern="x")],
     )
@@ -94,3 +94,39 @@ def test_evaluate_closed_proposal_raises(populated_store):
 def test_evaluate_unknown_proposal_raises(store):
     with pytest.raises(gates.GateError):
         gates.evaluate(store, "p-nope")
+
+
+def test_evaluate_with_model_runs_ab(populated_store, tiny_pack, monkeypatch):
+    import json
+
+    from conftest import FakeLLM
+    from loopsmith.config import LLMConfig
+    from loopsmith.eval import llm as llm_mod
+
+    base = heuristics.mine(populated_store)[0]
+    proposal = base.model_copy(update={
+        "id": "p-ab",
+        "body_md": "# Fix add\n\n`app/mathx.py` should add instead of subtract.\n"})
+    populated_store.add_proposal(proposal)
+
+    state: dict[str, int] = {}
+
+    def respond(messages):
+        has_hint = "add instead of subtract" in messages[0]["content"]
+        key = "cand" if has_hint else "base"
+        state[key] = state.get(key, 0) + 1
+        if has_hint and state[key] == 1:
+            return json.dumps({"tool": "write_file", "args": {
+                "path": "app/mathx.py",
+                "content": "def add(a, b):\n    return a + b\n"}})
+        return json.dumps({"tool": "finish", "args": {"summary": "done"}})
+
+    monkeypatch.setattr(llm_mod, "LLMClient", lambda cfg: FakeLLM(responder=respond))
+    llm = LLMConfig(base_url="https://fake.test/v1", api_key="k", model="fake-model")
+    run = gates.evaluate(populated_store, "p-ab", llm=llm,
+                         benchmark=str(tiny_pack.root), runs=1)
+    assert run.verdict == "promote"
+    assert run.summary["static_passed"] is True
+    assert run.summary["scenarios"][0]["candidate"] == 1.0
+    assert populated_store.get_proposal("p-ab").status == "evaluated"
+    assert len(populated_store.results_for(run.id)) == 2

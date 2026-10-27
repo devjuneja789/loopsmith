@@ -22,3 +22,8 @@ def default_project() -> str:
 def default_export_dir() -> Path:
     override = os.environ.get(EXPORT_ENV)
     return Path(override) if override else Path("dist")
+
+
+def runs_dir() -> Path:
+    """Where behavioral eval transcripts are stored."""
+    return db_path().parent / "runs"

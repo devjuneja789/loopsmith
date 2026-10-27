@@ -68,7 +68,7 @@ def test_full_demo_pipeline(tmp_path):
     assert (dist / "memory" / "MEMORY.md").exists()
     assert (dist / "skills" / "verify-after-edit" / "SKILL.md").exists()
     assert (dist / "loopsmith-pack.md").exists()
-    assert "use-make-test" in (dist / "AGENTS.md").read_text(encoding="utf-8")
+    assert "use-python-runtests-py" in (dist / "AGENTS.md").read_text(encoding="utf-8")
 
     # continual loop: new evidence arrives -> update proposal -> v2
     assert _invoke(runner, env, "import", s3, "--project", "acme-api").exit_code == 0
@@ -83,11 +83,11 @@ def test_full_demo_pipeline(tmp_path):
     assert _invoke(runner, env, "eval", upd).exit_code == 0
     assert _invoke(runner, env, "approve", upd, "--yes", "--force").exit_code == 0
 
-    history = _invoke(runner, env, "history", "instruction", "use-make-test")
+    history = _invoke(runner, env, "history", "instruction", "use-python-runtests-py")
     assert history.exit_code == 0 and "v2" not in history.output  # table shows 1 and 2
     assert "2" in history.output
 
-    rolled = _invoke(runner, env, "rollback", "instruction", "use-make-test")
+    rolled = _invoke(runner, env, "rollback", "instruction", "use-python-runtests-py")
     assert rolled.exit_code == 0 and "Rolled back" in rolled.output
 
     # exporting after rollback reflects v1 again

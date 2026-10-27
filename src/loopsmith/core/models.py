@@ -78,6 +78,21 @@ class EvalRun(BaseModel):
     finished_at: datetime | None = None
 
 
+class ScenarioResult(BaseModel):
+    """One arm x one scenario x one repetition of a behavioral eval."""
+
+    scenario_id: str
+    arm: Literal["baseline", "candidate"]
+    run_ix: int = 0
+    success: bool
+    score: float | None = None
+    tokens_in: int = 0
+    tokens_out: int = 0
+    turns: int = 0
+    wall_s: float = 0.0
+    transcript_path: str | None = None
+
+
 class AuditEvent(BaseModel):
     id: str
     ts: datetime

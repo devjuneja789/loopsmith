@@ -13,18 +13,20 @@ import traces -> mine evidence-cited proposals -> evaluate -> human approval
 ```
 
 Nothing becomes active without passing static gates *and* a human approval
-step. Every version is immutable, so any bad refinement can be rolled back
-without losing history.
+step. With an OpenAI-compatible model configured, a candidate must also win a
+repeatable baseline-vs-candidate benchmark. Every version is immutable, so any
+bad refinement can be rolled back without losing history.
 
 ## Quickstart
 
 ```powershell
 python -m pip install -e ".[dev]"
-python -m pytest -q           # 49 tests, no network
-powershell -ExecutionPolicy Bypass -File demo.ps1
+python -m pytest -q                              # 86 tests, no network
+powershell -ExecutionPolicy Bypass -File demo.ps1        # model-free pipeline
+powershell -ExecutionPolicy Bypass -File demo-llm.ps1    # model-backed A/B
 ```
 
-Or step by step:
+Step by step:
 
 ```powershell
 loopsmith init
@@ -33,73 +35,69 @@ loopsmith import examples/traces/acme-api-session2.jsonl --project acme-api
 loopsmith mine
 loopsmith proposals list
 loopsmith proposals show <id>
-loopsmith eval <id>
-loopsmith approve <id> --yes --force     # --force: no model configured
+loopsmith eval <id>                      # static gates; + A/B if a model is set
+loopsmith approve <id> --yes --force     # --force only when verdict is not_run
 loopsmith export                          # -> dist/AGENTS.md, MEMORY.md, skills/, pack
 ```
 
-## What it does today (P0, fully model-free)
+## What it does
 
 - **Trace import** — canonical JSONL plus a lenient OpenAI-messages-style
-  JSONL adapter. Content-hash ids make re-imports no-ops; raw events are
-  preserved for provenance.
+  adapter. Content-hash ids make re-imports no-ops; raw events are preserved.
 - **Deterministic miners** — four evidence-cited patterns:
-  `command_retry_loop` (flaky command), `user_correction` (preferred
-  command), `fix_then_verify` (fail -> edit -> pass cycles), and
-  `command_frequency` (the only command that succeeds). Findings merge by
-  `(kind, name)` so corroborating signals strengthen one proposal instead of
-  duplicating it.
-- **Proposals** — the smallest CRUD edit (`create`/`update`) with a
-  rationale and citations into trace events. Re-mining is idempotent; new
-  evidence after promotion produces an `update` proposal against the active
-  version.
-- **Evaluation gate** — static checks (body, slug, evidence grounding,
-  target freshness, no-op detection) always run. Behavioral A/B is the P1
-  hook: without a configured model the verdict is `not_run` and promotion
-  requires an explicit `--force`, recorded in the audit log.
-- **Approval + versioning** — one active version per entry (enforced by a
-  partial unique index), promotion is transactional, rollback is a pointer
-  move, and every transition lands in the audit log.
+  `command_retry_loop` (flaky command), `user_correction` (preferred command),
+  `fix_then_verify` (fail -> edit -> pass cycles), `command_frequency` (the
+  only command that succeeds). Corroborating signals merge into one proposal.
+- **LLM-assisted mining** (`mine --llm`) — the model proposes refinements in
+  the same schema; every citation is validated against the DB, and ungrounded
+  proposals are dropped.
+- **Proposals** — the smallest CRUD edit (`create`/`update`) with a rationale
+  and citations into trace events. Re-mining is idempotent; new evidence after
+  promotion yields an `update` proposal against the active version.
+- **Evaluation gate** — static checks always run (body, slug, evidence
+  grounding, target freshness, no-op detection). With a model configured, a
+  baseline-vs-candidate A/B run on the scenario pack decides promotion.
+- **Approval + versioning** — one active version per entry (partial unique
+  index), transactional promotion, rollback as a pointer move, full audit log.
 - **Export** — `AGENTS.md` in a managed block that round-trips around
-  human-written content, `memory/MEMORY.md`, `skills/<slug>/SKILL.md` with
-  frontmatter, and a single `loopsmith-pack.md`. Every section carries its
-  version stamp.
-
-## Commands
-
-| Command | Purpose |
-|---|---|
-| `loopsmith init` | create the SQLite DB (`.loopsmith/loopsmith.db`) |
-| `loopsmith import <file> [--project P] [--format auto\|loopsmith\|generic]` | ingest a trace |
-| `loopsmith traces list\|show <id>` | inspect imported traces |
-| `loopsmith mine [--project P]` | mine proposals |
-| `loopsmith proposals list\|show\|diff\|reject` | review evidence and diffs |
-| `loopsmith eval <id>` | static gates (+ behavioral A/B once P1 lands) |
-| `loopsmith approve <id> [--yes] [--force]` | the human gate |
-| `loopsmith history <kind> <name>` | version timeline |
-| `loopsmith rollback <kind> <name> [--to N]` | revert to an earlier version |
-| `loopsmith export [--out DIR] [--format all\|agents\|memory\|skills\|pack]` | render Markdown |
-| `loopsmith status` / `loopsmith doctor` | state and environment checks |
+  human-written content, `memory/MEMORY.md`, `skills/<slug>/SKILL.md`, and a
+  single `loopsmith-pack.md`; every section carries its version stamp.
 
 ## Evaluation methodology
 
 Two stages, conservative by design:
 
-1. **Static** (always, deterministic): well-formed body, slug validity,
-   every evidence ref resolves to a real trace event, target version is
-   current (stale proposals are refused), and the body actually differs from
-   the active one.
-2. **Behavioral A/B** (P1, needs an OpenAI-compatible endpoint): baseline
-   harness pack vs candidate pack on a repeatable scenario benchmark.
-   Verdict rules: `reject` on any regression or static failure; `promote`
-   only with an aggregate gain and zero per-scenario regressions;
-   `inconclusive` ties go to baseline.
+1. **Static** (always, deterministic): well-formed body, slug validity, every
+   evidence ref resolves, target version is current (stale proposals refused),
+   and the body differs from the active one.
+2. **Behavioral A/B** (when a model is configured): the baseline harness pack
+   vs the candidate pack (baseline + proposal) run on
+   `benchmarks/default/scenarios/`. Each scenario has a task, a fixture
+   workspace and hidden `pytest` checkers. The agent works in a sandbox copy
+   with five tools (`list_dir`, `read_file`, `write_file`, `run_command`,
+   `finish`) and a fixed command allowlist; the graders run outside that
+   sandbox so a run can't game its own score.
 
-## Model configuration (optional, P1)
+Verdicts: `reject` on any per-scenario regression or aggregate loss;
+`promote` only with an aggregate gain and zero regressions; `inconclusive`
+ties go to baseline. Without a model the verdict is `not_run` and approval
+requires an explicit, audited `--force`.
 
-Any OpenAI-compatible `/chat/completions` endpoint works — OpenRouter,
-vLLM, LM Studio, or ollama's compat layer. LoopSmith never assumes a
-vendor-internal model API.
+Reproducibility: pack contents are hashed, the model name and params are
+recorded, and full transcripts land in `.loopsmith/runs/`. Arms are cached by
+(benchmark hash, pack hash, model, scenario, arm, repetition), so shared
+baselines never re-spend API budget.
+
+Budget note: OpenRouter's free tier allows roughly 50 requests/day without
+$10 lifetime credits. The default pack is 3 scenarios × 2 arms × 1 run
+(~10-25 requests). Use `--runs 1` and expect `inconclusive` when a small model
+ignores the harness; raise `--runs` once you have credits.
+
+## Model configuration (OpenAI-compatible only)
+
+Any endpoint speaking `POST /chat/completions` works: OpenRouter, vLLM,
+LM Studio, or ollama's compat layer. LoopSmith never assumes a vendor-internal
+model API.
 
 ```powershell
 $env:LOOPSMITH_LLM_BASE_URL = "https://openrouter.ai/api/v1"
@@ -109,17 +107,34 @@ $env:LOOPSMITH_LLM_MODEL    = "cohere/north-mini-code:free"
 
 Recommended free coding model (checked Oct 2026): `cohere/north-mini-code:free`
 (agentic/terminal coding). Fallbacks: `nvidia/nemotron-3-super-120b-a12b:free`,
-`thinkingmachines/inkling-small:free`. The free tier is roughly 50 requests/day
-without $10 lifetime credits, so the P1 benchmark defaults to small packs with
-N=1 runs and cached arm results.
+`thinkingmachines/inkling-small:free`. Poolside Laguna is skipped: its free
+endpoint expires 2026-10-31.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `loopsmith init` | create the SQLite DB (`.loopsmith/loopsmith.db`) |
+| `loopsmith import <file> [--project P] [--format auto\|loopsmith\|generic]` | ingest a trace |
+| `loopsmith traces list\|show <id>` | inspect imported traces |
+| `loopsmith mine [--project P] [--llm]` | mine proposals (heuristics, optional model) |
+| `loopsmith proposals list\|show\|diff\|reject` | review evidence and diffs |
+| `loopsmith eval <id> [--runs N] [--benchmark DIR]` | static gates + A/B when a model is set |
+| `loopsmith benchmark list` | list scenarios and the pack hash |
+| `loopsmith benchmark smoke` | prove fixtures start unsolved (checker sanity) |
+| `loopsmith approve <id> [--yes] [--force]` | the human gate |
+| `loopsmith history <kind> <name>` | version timeline |
+| `loopsmith rollback <kind> <name> [--to N]` | revert to an earlier version |
+| `loopsmith export [--out DIR] [--format all\|agents\|memory\|skills\|pack]` | render Markdown |
+| `loopsmith status` / `loopsmith doctor` | state and environment checks |
 
 ## Honest scope notes
 
-- The demo traces and the (P1) benchmark scenarios are co-designed so the
-  mined refinements have measurable effect. That is demonstration
-  methodology, not a general capability claim.
-- LoopSmith is batch/offline: it refines from imported traces, it does not
-  hook into a live session.
+- The demo traces and benchmark scenarios are co-designed so the mined
+  refinements can matter. That is demonstration methodology, not a general
+  capability claim; `inconclusive` is a legitimate outcome.
+- LoopSmith is batch/offline: it refines from imported traces, it does not hook
+  into a live session.
 - Approval is mandatory; there is no auto-promotion path.
 
 ## Layout
@@ -129,18 +144,16 @@ src/loopsmith/
   core/      models, SQLite store, versioning (promote/rollback/pack)
   traces/    canonical schema, importers, typed query helpers
   mining/    deterministic miners + merge logic
-  eval/      static gates (+ P1 A/B runner hook)
+  eval/      static gates, LLM client, mini agent, scenario pack, A/B runner, LLM miner
   export/    Markdown renderers
   cli/       Typer commands
-examples/traces/   3 demo sessions (acme-api)
-tests/             49 tests: store, importers, miners, gates, versioning, render, CLI e2e
-demo.ps1           full pipeline walkthrough
+benchmarks/default/scenarios/   3 fixtures (task + workspace + hidden checker)
+examples/traces/                3 demo sessions (acme-api)
+tests/                          86 tests: unit, runner/agent, CLI e2e (no network)
+demo.ps1 / demo-llm.ps1         model-free and model-backed walkthroughs
 ```
 
 ## Roadmap
 
-- **P1 (headline):** mini agent loop + scenario pack, A/B runner with
-  hashes/transcripts/caching, LLM-assisted miner using the same Proposal
-  schema.
-- **P2:** `claude-code` JSONL adapter, `benchmark smoke`, richer tables,
-  eval result tables in the CLI.
+- **P2:** `claude-code` JSONL adapter, richer tables, eval result history in
+  the CLI, optional OpenAI-style native tool calling for stronger models.

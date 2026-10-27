@@ -20,7 +20,7 @@ def command(ev: TraceEvent) -> str:
 
 
 def norm_command(cmd: str) -> str:
-    """First two whitespace-collapsed, lowercased tokens ('make test -k x' → 'make test')."""
+    """First two whitespace-collapsed, lowercased tokens ('python runtests.py -k x' → 'python runtests.py')."""
     parts = cmd.split()
     return " ".join(parts[:2]).lower() if parts else ""
 
