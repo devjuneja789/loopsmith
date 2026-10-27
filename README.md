@@ -1,30 +1,40 @@
 # LoopSmith
 
-An **evaluation-gated continual harness** for coding agents, inspired by the
-Continual Harness in [Prime Agent](https://www.primeintellect.ai/blog/prime-agent).
+**Turn coding-session traces into reusable agent instructions, with evidence and
+checks before anything is promoted.** LoopSmith is an offline refinement
+workflow inspired by the [Continual Harness in Prime Agent](https://www.primeintellect.ai/blog/prime-agent).
 
-Prime Agent's `/refine` lets an agent rewrite its own harness state (memories,
-skills, project instructions) from its trajectory. LoopSmith takes the same
-idea offline and puts a gate in front of it:
+Coding agents can repeat the same mistakes across sessions. LoopSmith imports
+past sessions, finds candidate lessons, checks them against evidence, and
+exports approved guidance for future sessions:
 
 ```
 import traces -> mine evidence-cited proposals -> evaluate -> human approval
       -> versioned promotion (rollback) -> export Markdown for any coding agent
 ```
 
-Nothing becomes active without passing static gates *and* a human approval
-step. With an OpenAI-compatible model configured, a candidate must also win a
-repeatable baseline-vs-candidate benchmark. Every version is immutable, so any
-bad refinement can be rolled back without losing history.
+Nothing becomes active without passing static checks and human approval. When
+an OpenAI-compatible model is configured, LoopSmith also compares the current
+guidance with the proposed change on a benchmark pack. Approved changes are
+versioned and can be rolled back.
 
 ## Quickstart
 
 ```powershell
+python --version                              # Python 3.11 or newer
 python -m pip install -e ".[dev]"
-python -m pytest -q                              # 86 tests, no network
+python -m pytest -q                              # test suite; no network
 powershell -ExecutionPolicy Bypass -File demo.ps1        # model-free pipeline
 powershell -ExecutionPolicy Bypass -File demo-llm.ps1    # model-backed A/B
 ```
+
+The quickest way to see the project is `demo.ps1`: it imports three example
+sessions, mines and reviews proposals, demonstrates the approval gate, exports
+Markdown instructions, then shows how a later trace creates a versioned update
+that can be rolled back. It needs no API key. The script recreates its local
+`.loopsmith/` database and `dist/` export directory, so run it from a clean
+checkout or after saving anything in those directories. The LLM walkthrough
+uses a configured OpenAI-compatible endpoint and makes API requests.
 
 Step by step:
 
@@ -36,7 +46,7 @@ loopsmith mine
 loopsmith proposals list
 loopsmith proposals show <id>
 loopsmith eval <id>                      # static gates; + A/B if a model is set
-loopsmith approve <id> --yes --force     # --force only when verdict is not_run
+loopsmith approve <id> --yes --force     # --force records an override
 loopsmith export                          # -> dist/AGENTS.md, MEMORY.md, skills/, pack
 ```
 
@@ -51,7 +61,7 @@ loopsmith export                          # -> dist/AGENTS.md, MEMORY.md, skills
 - **LLM-assisted mining** (`mine --llm`) — the model proposes refinements in
   the same schema; every citation is validated against the DB, and ungrounded
   proposals are dropped.
-- **Proposals** — the smallest CRUD edit (`create`/`update`) with a rationale
+- **Proposals** — a focused create or update with a rationale
   and citations into trace events. Re-mining is idempotent; new evidence after
   promotion yields an `update` proposal against the active version.
 - **Evaluation gate** — static checks always run (body, slug, evidence
@@ -62,6 +72,20 @@ loopsmith export                          # -> dist/AGENTS.md, MEMORY.md, skills
 - **Export** — `AGENTS.md` in a managed block that round-trips around
   human-written content, `memory/MEMORY.md`, `skills/<slug>/SKILL.md`, and a
   single `loopsmith-pack.md`; every section carries its version stamp.
+
+## Live evaluation evidence
+
+The saved [live A/B run summary](evidence/live-ab-2026-10-26/SUMMARY.md) records
+one model-backed run on `acme-auth-fix`. The baseline and candidate both fixed
+the authentication bug and passed the grader (100% each), so LoopSmith returned
+`inconclusive` and left the mined instruction unpromoted. The candidate was not
+decisive in this task; the result demonstrates the no-promotion-on-a-tie gate,
+not a general performance gain.
+
+The run used one repetition per arm and 16 API requests; the recorded cost was
+$0.00 on the free model at the time. The summary links to the stored database
+and full transcripts for inspection. This is a small, single-scenario snapshot,
+not a broad benchmark claim.
 
 ## Evaluation methodology
 
@@ -89,13 +113,11 @@ recorded, and full transcripts land in `.loopsmith/runs/`. Arms are cached by
 baselines never re-spend API budget. A durable snapshot of a live model-backed
 evaluation run is preserved in `evidence/` for inspection without spending API quota.
 
-Budget note: OpenRouter's free tier allows roughly 50 requests/day without
-$10 lifetime credits. The full pack is 3 scenarios × 2 arms × 1 run
-(~30-48 requests); `--scenario <id>` restricts the run to one fixture
-(~8-16 requests), and arms are cached so repeat evaluations are cheap.
-`demo-llm.ps1` defaults to a single scenario for exactly this reason. Expect
-`inconclusive` when a small model ignores the harness; raise `--runs` once you
-have credits.
+The model-backed demo runs one scenario to limit API usage; the full pack has
+three scenarios, and `--scenario <id>` can select a single fixture. Results are
+cached by benchmark, harness pack, model, scenario, arm, and repetition, so
+unchanged arms can be reused. Outcomes depend on the configured model; ties are
+`inconclusive` and remain unpromoted unless a person explicitly overrides.
 
 ## Model configuration (OpenAI-compatible only)
 
@@ -104,9 +126,9 @@ LM Studio, or ollama's compat layer. LoopSmith never assumes a vendor-internal
 model API.
 
 ```powershell
-$env:LOOPSMITH_LLM_BASE_URL = "https://openrouter.ai/api/v1"
+$env:LOOPSMITH_LLM_BASE_URL = "<provider-base-url>"
 $env:LOOPSMITH_LLM_API_KEY  = "<key>"
-$env:LOOPSMITH_LLM_MODEL    = "cohere/north-mini-code:free"
+$env:LOOPSMITH_LLM_MODEL    = "<model-id>"
 ```
 
 Or put the same three `KEY=VALUE` lines in a `.env` file next to `pyproject.toml`:
@@ -114,10 +136,9 @@ LoopSmith loads it automatically (without overriding real environment variables)
 Set `LOOPSMITH_SKIP_DOTENV=1` to ignore it — `demo.ps1` does this to stay
 model-free.
 
-Recommended free coding model (checked Oct 2026): `cohere/north-mini-code:free`
-(agentic/terminal coding). Fallbacks: `nvidia/nemotron-3-super-120b-a12b:free`,
-`thinkingmachines/inkling-small:free`. Poolside Laguna is skipped: its free
-endpoint expires 2026-10-31.
+Choose a model that can follow tool-use instructions and edit code. Model names,
+availability, and pricing vary by provider; consult your endpoint provider for
+current options.
 
 ## Commands
 
@@ -147,6 +168,14 @@ endpoint expires 2026-10-31.
   into a live session.
 - Approval is mandatory; there is no auto-promotion path.
 
+## For hackathon reviewers
+
+The core demo is reproducible without credentials: run `demo.ps1` to see the
+full trace-to-approved-export loop, including a later update and rollback. The
+optional `demo-llm.ps1` shows behavioral A/B evaluation on task fixtures. See
+[the saved live run](evidence/live-ab-2026-10-26/SUMMARY.md) for an example of
+the benchmark and promotion gate in action.
+
 ## Layout
 
 ```
@@ -160,7 +189,7 @@ src/loopsmith/
 evidence/                       durable live evaluation snapshot and transcripts
 benchmarks/default/scenarios/   3 fixtures (task + workspace + hidden checker)
 examples/traces/                3 demo sessions (acme-api)
-tests/                          86 tests: unit, runner/agent, CLI e2e (no network)
+tests/                          unit, runner/agent, CLI e2e tests (no network)
 demo.ps1 / demo-llm.ps1         model-free and model-backed walkthroughs
 ```
 
