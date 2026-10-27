@@ -1,12 +1,12 @@
-# LoopSmith MVP Architecture & Implementation Plan
+# LoopSmith Architecture & Design
 
-A solo-hackathon MVP for LoopSmith: an evaluation-gated continual harness that imports coding-agent traces, proposes evidence-cited versioned memories/skills/instructions, gates them behind static checks and an optional model-backed A/B benchmark, requires approval, supports rollback, and exports Markdown harness packs.
+An evaluation-gated continual harness that imports coding-agent traces, proposes evidence-cited versioned memories/skills/instructions, gates them behind static checks and an optional model-backed A/B benchmark, requires approval, supports rollback, and exports Markdown harness packs.
 
-# LoopSmith — Evaluation-Gated Continual Harness (Hackathon MVP)
+# LoopSmith — Evaluation-Gated Continual Harness
 
 LoopSmith is an offline, batch version of Prime Agent's `/refine` loop: it imports structured coding-session traces, proposes evidence-cited refinements to harness state (memories, skills, project instructions), gates every candidate behind a repeatable benchmark A/B plus static checks, requires human approval, versions everything with rollback, and exports approved refinements as Markdown that any coding agent (Claude Code, Codex, etc.) can consume.
 
-**Design stance:** deterministic by default, LLM optional. The entire demo runs model-free; model-backed evaluation and LLM mining activate only when an OpenAI-compatible endpoint is configured via env vars. No dependency on Alan's internal model as an application API.
+**Design stance:** deterministic by default, LLM optional. The entire demo runs model-free; model-backed evaluation and LLM mining activate only when an OpenAI-compatible endpoint is configured via env vars. No proprietary vendor dependencies for the application API.
 
 ## 1. Concept mapping to Prime Agent's Continual Harness
 
@@ -89,7 +89,7 @@ loopsmith/
 │   ├── manifest.toml
 │   └── scenarios/<id>/{workspace/, task.md, checker/test_hidden.py}
 ├── examples/traces/*.jsonl       # 2-3 crafted demo sessions (repo "acme-api")
-├── demo.ps1                      # full pipeline run for the hackathon demo
+├── demo.ps1                      # full pipeline run for the demo
 └── tests/
     ├── conftest.py               # tmp DB + sample trace fixtures
     ├── test_store.py  test_versioning.py  test_importers.py
@@ -234,29 +234,24 @@ Stage 2 — behavioral A/B (only when LLM configured; otherwise verdict = `not_r
 
 ## 10. LLM policy
 
-OpenAI-compatible `/chat/completions` only, configured by env: `LOOPSMITH_LLM_BASE_URL`, `LOOPSMITH_LLM_API_KEY`, `LOOPSMITH_LLM_MODEL`. Works with OpenRouter, vLLM, LM Studio, ollama's compat layer. Thin httpx client (~60 lines), no SDK dependency. Never wired to Alan's internal model. No LLM → heuristic mining + static gates + `--force` path still complete.
+OpenAI-compatible `/chat/completions` only, configured by env: `LOOPSMITH_LLM_BASE_URL`, `LOOPSMITH_LLM_API_KEY`, `LOOPSMITH_LLM_MODEL`. Works with OpenRouter, vLLM, LM Studio, ollama's compat layer. Thin httpx client (~60 lines), no SDK dependency. No proprietary vendor dependencies. No LLM → heuristic mining + static gates + `--force` path still complete.
 
-## 11. Prioritized implementation plan (solo, ~24h to deadline)
+## 11. Implementation Architecture & Milestones
 
-**P0 — model-free core loop (14-16h) — the demo floor:**
+**Core Architecture (Model-free loop):**
+1. Scaffold + configuration + SQLite store + domain models
+2. Canonical trace schema + format importers
+3. Heuristic miners producing evidence-cited proposals
+4. Proposals CLI (list, show, diff) + static gate checks
+5. Transactional approval/promotion + version history + rollback + stale guards
+6. Export renderers (`AGENTS.md`, `MEMORY.md`, `SKILL.md`, `pack.md`)
+7. End-to-end verification (`demo.ps1`)
 
-1. Scaffold + config + store + domain models (2h)
-2. Canonical trace schema + 2 importers + 2 crafted demo traces (3h)
-3. Heuristic miners → evidence-cited proposals (3h)
-4. Proposals CLI (list/show/diff) + static gates (2h)
-5. Approve/promote + history + rollback + stale guard (2h)
-6. Export renderers (2h)
-7. E2E test + `demo.ps1` green (1.5h)
-
-**P1 — model-backed headline (6-8h, only if an API key or local model is available):**
-8. LLM client + `doctor` check (1h)
-9. Scenario pack (4 scenarios) + mini agent loop + runner (4h)
-10. A/B verdict integration + transcripts + caching (2h)
-11. LLM miner (1.5h; optional even within P1)
-
-**P2 — stretch (only if trivial):** `benchmark smoke` polish, richer tables, claude-code JSONL adapter, README GIF.
-
-Schedule: tonight P0 steps 1-3; tomorrow morning steps 4-7; early afternoon P1; evening = buffer + demo rehearsal. If P1's agent loop overruns 2h beyond estimate, cut to 2 scenarios and N=1.
+**Behavioral Evaluation Layer (Model-backed):**
+8. Minimal OpenAI-compatible LLM client + environment doctor check
+9. Scenario pack loader + bounded mini-agent loop + benchmark runner
+10. Baseline-vs-candidate A/B verdict integration with transcripts and arm caching
+11. Optional LLM-assisted refinement miner
 
 ## 12. Test strategy
 
@@ -264,16 +259,14 @@ Schedule: tonight P0 steps 1-3; tomorrow morning steps 4-7; early afternoon P1; 
 - E2E: full model-free pipeline on synthetic traces (`import → mine → eval(static) → approve → export → rollback`).
 - No network in tests; LLM client mocked. `benchmark smoke` validates checkers deterministically.
 
-## 13. Riskiest assumptions (ranked)
+## 13. System Considerations & Mitigations
 
-1. **Real trace formats are volatile/undocumented** (Claude Code/Codex JSONL varies by version) → adapter breakage. Mitigation: canonical schema is the contract; demo uses crafted traces; generic-jsonl fallback; claude-code adapter is P2.
-2. **Null-delta benchmark** — small models may ignore harness content, or both arms pass → wall of `inconclusive` verdicts, weak demo. Mitigation: co-designed scenarios where the refinement is *necessary*; ties stay baseline (honest gate); tokens/turns reported as secondary evidence.
-3. **Nondeterminism at temperature 0** → flaky verdicts and wrong rejections. Mitigation: N=3 majority for headline runs; conservative ties; raw transcripts + hashes recorded; accept `inconclusive` as a legitimate verdict.
-4. **API availability/cost on the night** → model path dead. Mitigation: demo runs fully model-free; `doctor` detects early; `--force` approval path exists.
-5. **Version-state corruption** (double approve, stale proposals, rollback races). Mitigation: single-writer CLI, transactions, stale guard, targeted tests.
-6. **Scope creep** — the top hackathon killer given ~24h. Mitigation: P0 hard cutline; module map is a contract; new ideas go to README future-work.
-7. **Windows quirks** (this is the demo machine): subprocess pytest, paths, console encoding. Mitigation: `pathlib` everywhere, `sys.executable -m pytest`, explicit UTF-8, temp-dir sandboxes; verify on Windows first.
-8. **Mini-agent reward hacking** (Prime Agent's own Factorio lesson): agent edits hidden tests or games the checker. Mitigation: checkers live outside the sandbox and grade a pristine copy; bounded tool allowlist; turn limits.
+1. **Trace formats variance** (Claude Code/Codex JSONL varies by version) → canonical schema acts as the internal contract; modular importer registry.
+2. **Null-delta benchmark** — small models may ignore harness content or both arms pass → co-designed scenarios where the refinement is necessary; conservative gate (ties stay baseline); secondary token/turn metrics tracked.
+3. **Model nondeterminism at temperature 0** → flaky verdicts. Mitigation: majority runs (`--runs 3`), conservative ties, raw transcripts + content hashes recorded.
+4. **API availability / connectivity** → demo runs fully model-free; `doctor` command diagnoses environment; manual audited `--force` approval path exists.
+5. **Version-state integrity** (double approve, stale proposals, rollback races) → single-writer CLI, transactions, stale guards, and targeted concurrency tests.
+6. **Tool sandbox security** → bounded tool allowlist, workspace path boundary checks, checkers run outside sandbox on clean copies.
 
 ## 14. Out of scope (explicit)
 

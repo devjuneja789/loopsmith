@@ -108,7 +108,7 @@ def static_gates(store: Store, proposal: Proposal) -> GateReport:
 
 def evaluate(store: Store, proposal_id: str, llm: LLMConfig | None = None,
              benchmark: str | None = None, runs: int = 1,
-             runs_dir=None) -> EvalRun:
+             runs_dir=None, scenario_ids: list[str] | None = None) -> EvalRun:
     """Run gates on a proposal and record the verdict as an EvalRun.
 
     Static gates always run. When a model endpoint is configured and a
@@ -143,7 +143,7 @@ def evaluate(store: Store, proposal_id: str, llm: LLMConfig | None = None,
 
     if llm is not None and llm.configured:
         from loopsmith.eval.llm import LLMClient
-        from loopsmith.eval.runner import run_ab
+        from loopsmith.eval.runner import RunnerError, run_ab
         from loopsmith.eval.scenarios import PackError, load_pack, resolve_pack_root
 
         try:
@@ -161,8 +161,19 @@ def evaluate(store: Store, proposal_id: str, llm: LLMConfig | None = None,
             _store_and_close(store, proposal, run)
             return run
 
+        if scenario_ids:
+            known = {scenario.id for scenario in pack.scenarios}
+            unknown = [sid for sid in scenario_ids if sid not in known]
+            if unknown:
+                raise GateError(
+                    f"unknown scenario ids {unknown}; pack '{pack.id}' has {sorted(known)}")
+
         client = LLMClient(llm)
-        run = run_ab(store, proposal, pack, client, runs=runs, runs_dir=runs_dir)
+        try:
+            run = run_ab(store, proposal, pack, client, runs=runs,
+                         runs_dir=runs_dir, scenario_ids=scenario_ids)
+        except RunnerError as exc:
+            raise GateError(str(exc)) from exc
         run.summary["static"] = static_summary
         run.summary["static_passed"] = True
         run.summary.setdefault("behavioral", "A/B benchmark")

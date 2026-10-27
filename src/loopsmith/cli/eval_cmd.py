@@ -20,6 +20,9 @@ def evaluate(
     benchmark: Optional[str] = typer.Option(
         None, "--benchmark", "-b",
         help="Benchmark pack directory (default: benchmarks/default)"),
+    scenario: Optional[list[str]] = typer.Option(
+        None, "--scenario", "-s",
+        help="Run only these scenario ids (repeatable; saves API budget)"),
 ) -> None:
     """Run static gates; with a configured model, also run the A/B benchmark."""
     from loopsmith.eval import gates
@@ -29,7 +32,7 @@ def evaluate(
     try:
         run = gates.evaluate(store, proposal_id, llm=config.load_llm_config(),
                              benchmark=benchmark, runs=runs,
-                             runs_dir=paths.runs_dir())
+                             runs_dir=paths.runs_dir(), scenario_ids=scenario)
     except (gates.GateError, LLMError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1)

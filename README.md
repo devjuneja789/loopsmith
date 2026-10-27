@@ -86,12 +86,16 @@ requires an explicit, audited `--force`.
 Reproducibility: pack contents are hashed, the model name and params are
 recorded, and full transcripts land in `.loopsmith/runs/`. Arms are cached by
 (benchmark hash, pack hash, model, scenario, arm, repetition), so shared
-baselines never re-spend API budget.
+baselines never re-spend API budget. A durable snapshot of a live model-backed
+evaluation run is preserved in `evidence/` for inspection without spending API quota.
 
 Budget note: OpenRouter's free tier allows roughly 50 requests/day without
-$10 lifetime credits. The default pack is 3 scenarios × 2 arms × 1 run
-(~10-25 requests). Use `--runs 1` and expect `inconclusive` when a small model
-ignores the harness; raise `--runs` once you have credits.
+$10 lifetime credits. The full pack is 3 scenarios × 2 arms × 1 run
+(~30-48 requests); `--scenario <id>` restricts the run to one fixture
+(~8-16 requests), and arms are cached so repeat evaluations are cheap.
+`demo-llm.ps1` defaults to a single scenario for exactly this reason. Expect
+`inconclusive` when a small model ignores the harness; raise `--runs` once you
+have credits.
 
 ## Model configuration (OpenAI-compatible only)
 
@@ -104,6 +108,11 @@ $env:LOOPSMITH_LLM_BASE_URL = "https://openrouter.ai/api/v1"
 $env:LOOPSMITH_LLM_API_KEY  = "<key>"
 $env:LOOPSMITH_LLM_MODEL    = "cohere/north-mini-code:free"
 ```
+
+Or put the same three `KEY=VALUE` lines in a `.env` file next to `pyproject.toml`:
+LoopSmith loads it automatically (without overriding real environment variables).
+Set `LOOPSMITH_SKIP_DOTENV=1` to ignore it — `demo.ps1` does this to stay
+model-free.
 
 Recommended free coding model (checked Oct 2026): `cohere/north-mini-code:free`
 (agentic/terminal coding). Fallbacks: `nvidia/nemotron-3-super-120b-a12b:free`,
@@ -119,7 +128,8 @@ endpoint expires 2026-10-31.
 | `loopsmith traces list\|show <id>` | inspect imported traces |
 | `loopsmith mine [--project P] [--llm]` | mine proposals (heuristics, optional model) |
 | `loopsmith proposals list\|show\|diff\|reject` | review evidence and diffs |
-| `loopsmith eval <id> [--runs N] [--benchmark DIR]` | static gates + A/B when a model is set |
+| `loopsmith eval <id> [--runs N] [--scenario ID ...] [--benchmark DIR]` | static gates + A/B when a model is set |
+| `loopsmith runs [run-id]` | list eval runs, or inspect one run's results and transcripts |
 | `loopsmith benchmark list` | list scenarios and the pack hash |
 | `loopsmith benchmark smoke` | prove fixtures start unsolved (checker sanity) |
 | `loopsmith approve <id> [--yes] [--force]` | the human gate |
@@ -147,6 +157,7 @@ src/loopsmith/
   eval/      static gates, LLM client, mini agent, scenario pack, A/B runner, LLM miner
   export/    Markdown renderers
   cli/       Typer commands
+evidence/                       durable live evaluation snapshot and transcripts
 benchmarks/default/scenarios/   3 fixtures (task + workspace + hidden checker)
 examples/traces/                3 demo sessions (acme-api)
 tests/                          86 tests: unit, runner/agent, CLI e2e (no network)
@@ -155,5 +166,6 @@ demo.ps1 / demo-llm.ps1         model-free and model-backed walkthroughs
 
 ## Roadmap
 
-- **P2:** `claude-code` JSONL adapter, richer tables, eval result history in
-  the CLI, optional OpenAI-style native tool calling for stronger models.
+- **Expanded Traces:** `claude-code` JSONL adapter and additional agent trace formats.
+- **CLI Polish:** Richer terminal tables and interactive evaluation run history.
+- **Advanced Tool Calling:** Optional OpenAI-style native tool calling for frontier models.

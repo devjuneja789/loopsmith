@@ -410,18 +410,29 @@ class Store:
     def eval_runs_for(self, proposal_id: str) -> list[EvalRun]:
         rows = self._conn.execute(
             "SELECT * FROM eval_runs WHERE proposal_id = ? ORDER BY started_at", (proposal_id,))
-        return [
-            EvalRun(
-                id=r["id"], proposal_id=r["proposal_id"], benchmark_id=r["benchmark_id"],
-                benchmark_hash=r["benchmark_hash"], model=r["model"],
-                params=json.loads(r["params_json"]), baseline_pack_hash=r["baseline_pack_hash"],
-                candidate_pack_hash=r["candidate_pack_hash"], verdict=r["verdict"],
-                summary=json.loads(r["summary_json"]),
-                started_at=datetime.fromisoformat(r["started_at"]),
-                finished_at=datetime.fromisoformat(r["finished_at"]) if r["finished_at"] else None,
-            )
-            for r in rows
-        ]
+        return [self._eval_run_from_row(r) for r in rows]
+
+    def get_eval_run(self, run_id: str) -> EvalRun | None:
+        row = self._row("SELECT * FROM eval_runs WHERE id = ?", (run_id,))
+        return self._eval_run_from_row(row) if row else None
+
+    def all_eval_runs(self, limit: int = 20) -> list[EvalRun]:
+        rows = self._conn.execute(
+            "SELECT * FROM eval_runs ORDER BY started_at DESC, rowid DESC LIMIT ?",
+            (limit,))
+        return [self._eval_run_from_row(r) for r in rows]
+
+    @staticmethod
+    def _eval_run_from_row(r: sqlite3.Row) -> EvalRun:
+        return EvalRun(
+            id=r["id"], proposal_id=r["proposal_id"], benchmark_id=r["benchmark_id"],
+            benchmark_hash=r["benchmark_hash"], model=r["model"],
+            params=json.loads(r["params_json"]), baseline_pack_hash=r["baseline_pack_hash"],
+            candidate_pack_hash=r["candidate_pack_hash"], verdict=r["verdict"],
+            summary=json.loads(r["summary_json"]),
+            started_at=datetime.fromisoformat(r["started_at"]),
+            finished_at=datetime.fromisoformat(r["finished_at"]) if r["finished_at"] else None,
+        )
 
     def add_result(self, run_id: str, result: ScenarioResult) -> None:
         with self.tx():

@@ -24,11 +24,12 @@ TOOL_HELP = """Tools (reply with exactly one JSON object, nothing else):
 - {"tool": "list_dir", "args": {"path": "."}}
 - {"tool": "read_file", "args": {"path": "app/auth.py"}}
 - {"tool": "write_file", "args": {"path": "app/auth.py", "content": "..."}}
-- {"tool": "run_command", "args": {"command": "python runtests.py"}}
+- {"tool": "run_command", "args": {"command": "python -m pytest -q"}}
 - {"tool": "finish", "args": {"summary": "what you changed and why"}}
 
 Allowed commands: python -m pytest -q | python runtests.py
-Call finish when the task is complete."""
+Call finish when the task is complete. If a test run passes, call finish
+immediately instead of exploring further."""
 
 SYSTEM_TEMPLATE = """You are a careful coding agent fixing a small repository.
 Work only inside the workspace; use relative paths. Make the smallest change
@@ -41,6 +42,11 @@ that solves the task.
 # Task
 
 {task}"""
+
+REPEAT_NUDGE = (
+    "ERROR: you repeated the exact same action. Read the observation you "
+    "already have, change your approach, or call finish if the task is done."
+)
 
 
 @dataclass
@@ -125,6 +131,8 @@ def run_agent(llm, scenario, harness_md: str, workspace: Path,
     ]
     run = AgentRun()
     limit = max_turns or scenario.max_turns or DEFAULT_MAX_TURNS
+    previous_signature: str | None = None
+    repeats = 0
     for turn in range(1, limit + 1):
         result = llm.chat(messages, temperature=0.0, max_tokens=1200)
         run.turns = turn
@@ -134,7 +142,12 @@ def run_agent(llm, scenario, harness_md: str, workspace: Path,
         action = extract_json(result.text)
         tool = str(action.get("tool", "")).strip()
         args = action.get("args") or {}
-        if not tool or not isinstance(args, dict):
+        signature = f"{tool}:{json.dumps(args, sort_keys=True)}"
+        repeats = repeats + 1 if signature == previous_signature else 0
+        previous_signature = signature
+        if repeats >= 2:
+            observation, finished = (REPEAT_NUDGE, False)
+        elif not tool or not isinstance(args, dict):
             observation, finished = (
                 "ERROR: reply must be one JSON object with 'tool' and 'args'", False)
         else:

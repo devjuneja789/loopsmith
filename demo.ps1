@@ -1,10 +1,11 @@
-# LoopSmith hackathon demo -- the model-free pipeline (P0).
+# LoopSmith demo -- the model-free pipeline.
 # Run from the repo root: powershell -ExecutionPolicy Bypass -File demo.ps1
 $ErrorActionPreference = "Stop"
 $env:PYTHONIOENCODING = "utf-8"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
-# self-contained: always use the repo-local DB and dist folder
+# self-contained and model-free: ignore any .env and shell model settings
+$env:LOOPSMITH_SKIP_DOTENV = "1"
 $env:LOOPSMITH_DB = Join-Path $PWD ".loopsmith\loopsmith.db"
 $env:LOOPSMITH_EXPORT_DIR = Join-Path $PWD "dist"
 Remove-Item Env:\LOOPSMITH_LLM_API_KEY -ErrorAction SilentlyContinue

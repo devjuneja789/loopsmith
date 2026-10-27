@@ -1,9 +1,13 @@
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from loopsmith.core.store import Store
+
+# Hermetic tests: never read the developer's .env (it may hold a real key).
+os.environ.setdefault("LOOPSMITH_SKIP_DOTENV", "1")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = REPO_ROOT / "examples" / "traces"

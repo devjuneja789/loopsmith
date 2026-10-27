@@ -12,9 +12,14 @@ from loopsmith.cli import (
     export_cmd,
     mine_cmd,
     proposals_cmd,
+    runs_cmd,
     traces_cmd,
 )
 from loopsmith.cli.out import kv
+from loopsmith.config import load_dotenv
+
+# Pick up .env before any command reads environment settings.
+load_dotenv()
 
 app = typer.Typer(
     help="LoopSmith: evaluation-gated continual harness for coding agents.",
@@ -27,6 +32,7 @@ app.add_typer(benchmark_cmd.app, name="benchmark",
               help="Inspect and smoke-test the eval scenario pack")
 app.command(name="mine")(mine_cmd.mine)
 app.command(name="eval")(eval_cmd.evaluate)
+app.command(name="runs")(runs_cmd.runs)
 app.command(name="approve")(approve_cmd.approve)
 app.command(name="rollback")(approve_cmd.rollback)
 app.command(name="history")(approve_cmd.history)
@@ -91,7 +97,8 @@ def doctor() -> None:
         kv("llm endpoint", llm.base_url)
         kv("llm model", llm.model)
         kv("llm key", "set (hidden)")
-        typer.echo("  note:            behavioral A/B eval is P1; static gates are live")
+        typer.echo("  note:            behavioral A/B eval available "
+                   "(loopsmith eval --runs N)")
     else:
         typer.echo("  llm:             not configured (static gates only; "
                    "approval needs --force)")

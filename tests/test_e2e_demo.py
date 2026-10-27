@@ -1,4 +1,4 @@
-"""End-to-end CLI test: the exact model-free hackathon demo, no network."""
+"""End-to-end CLI test: the model-free demo, no network."""
 
 from typer.testing import CliRunner
 

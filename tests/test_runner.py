@@ -101,3 +101,20 @@ def test_decide_verdict_matrix():
     mixed = [{"scenario": "a", "baseline": 1.0, "candidate": 0.0, "delta": -1.0},
              {"scenario": "b", "baseline": 0.0, "candidate": 1.0, "delta": 1.0}]
     assert decide_verdict(mixed, 0.5, 0.5) == "reject"
+
+def test_ab_scenario_filter(store, tiny_pack):
+    proposal = make_proposal(store)
+    run = run_ab(store, proposal, tiny_pack, FakeLLM(responder=_scripted(True)),
+                 scenario_ids=["fix-add"])
+    assert run.summary["scenario_filter"] == ["fix-add"]
+    assert len(run.summary["scenarios"]) == 1
+
+
+def test_ab_unknown_scenario_raises(store, tiny_pack):
+    import pytest
+
+    from loopsmith.eval.runner import RunnerError
+
+    proposal = make_proposal(store)
+    with pytest.raises(RunnerError, match="no scenarios matched"):
+        run_ab(store, proposal, tiny_pack, FakeLLM(), scenario_ids=["nope"])

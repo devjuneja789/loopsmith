@@ -130,3 +130,14 @@ def test_evaluate_with_model_runs_ab(populated_store, tiny_pack, monkeypatch):
     assert run.summary["scenarios"][0]["candidate"] == 1.0
     assert populated_store.get_proposal("p-ab").status == "evaluated"
     assert len(populated_store.results_for(run.id)) == 2
+
+def test_evaluate_unknown_scenario_raises(populated_store, tiny_pack):
+    from loopsmith.config import LLMConfig
+
+    base = heuristics.mine(populated_store)[0]
+    proposal = base.model_copy(update={"id": "p-bad-scenario"})
+    populated_store.add_proposal(proposal)
+    llm = LLMConfig(base_url="https://fake.test/v1", api_key="k", model="m")
+    with pytest.raises(gates.GateError, match="unknown scenario"):
+        gates.evaluate(populated_store, "p-bad-scenario", llm=llm,
+                       benchmark=str(tiny_pack.root), scenario_ids=["nope"])

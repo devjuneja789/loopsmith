@@ -85,7 +85,14 @@ def _totals(results: list[ScenarioResult], arm: str) -> dict:
 
 
 def run_ab(store: Store, proposal: Proposal, pack: Pack, llm, runs: int = 1,
-           max_turns: int | None = None, runs_dir: Path | None = None) -> EvalRun:
+           max_turns: int | None = None, runs_dir: Path | None = None,
+           scenario_ids: list[str] | None = None) -> EvalRun:
+    scenarios = [s for s in pack.scenarios
+                 if not scenario_ids or s.id in scenario_ids]
+    if not scenarios:
+        raise RunnerError(
+            f"no scenarios matched {scenario_ids}; pack has "
+            f"{[s.id for s in pack.scenarios]}")
     baseline_md = versioning.pack_markdown(store)
     candidate_md = versioning.pack_markdown(store, extra=proposal)
     baseline_hash = versioning.pack_hash(baseline_md)
@@ -107,7 +114,7 @@ def run_ab(store: Store, proposal: Proposal, pack: Pack, llm, runs: int = 1,
     error: str | None = None
     try:
         with tempfile.TemporaryDirectory(prefix="loopsmith-ab-") as tmp:
-            for scenario in pack.scenarios:
+            for scenario in scenarios:
                 arms = (
                     ("baseline", baseline_md, baseline_hash),
                     ("candidate", candidate_md, candidate_hash),
@@ -157,7 +164,7 @@ def run_ab(store: Store, proposal: Proposal, pack: Pack, llm, runs: int = 1,
         error = str(exc)
 
     per_scenario = []
-    for scenario in pack.scenarios:
+    for scenario in scenarios:
         base_rate = _rate(results, "baseline", scenario.id)
         cand_rate = _rate(results, "candidate", scenario.id)
         per_scenario.append({
@@ -176,6 +183,7 @@ def run_ab(store: Store, proposal: Proposal, pack: Pack, llm, runs: int = 1,
         "status": "error" if error else "complete",
         "error": error,
         "runs": runs,
+        "scenario_filter": scenario_ids,
         "scenarios": per_scenario,
         "baseline_success": round(baseline_rate, 3),
         "candidate_success": round(candidate_rate, 3),

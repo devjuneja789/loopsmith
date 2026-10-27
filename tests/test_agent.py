@@ -103,3 +103,11 @@ def test_harness_pack_is_in_the_system_prompt(tmp_path, tiny_pack):
     system = llm.calls[0][0]["content"]
     assert "USE THE HINT" in system
     assert "Fix add" in system
+
+def test_repeated_action_gets_a_nudge(tmp_path, tiny_pack):
+    scenario = tiny_pack.scenarios[0]
+    sandbox = _sandbox(tmp_path, scenario)
+    same = json.dumps({"tool": "list_dir", "args": {"path": "."}})
+    run = run_agent(FakeLLM([same, same, same]), scenario, "", sandbox, max_turns=3)
+    assert "repeated the exact same action" not in run.transcript[0]["observation"]
+    assert "repeated the exact same action" in run.transcript[2]["observation"]
