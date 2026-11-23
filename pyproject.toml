@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loopsmith"
-version = "0.1.0"
+version = "0.2.0"
 description = "Evaluation-gated continual harness for coding agents: import traces, propose evidence-cited refinements, gate them, approve, export."
 readme = "README.md"
 requires-python = ">=3.11"

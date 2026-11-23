@@ -12,6 +12,7 @@ from loopsmith.cli import (
     export_cmd,
     mine_cmd,
     proposals_cmd,
+    review_cmd,
     runs_cmd,
     traces_cmd,
 )
@@ -31,6 +32,7 @@ app.add_typer(proposals_cmd.app, name="proposals", help="Review refinement propo
 app.add_typer(benchmark_cmd.app, name="benchmark",
               help="Inspect and smoke-test the eval scenario pack")
 app.command(name="mine")(mine_cmd.mine)
+app.command(name="review")(review_cmd.review)
 app.command(name="eval")(eval_cmd.evaluate)
 app.command(name="runs")(runs_cmd.runs)
 app.command(name="approve")(approve_cmd.approve)
@@ -57,7 +59,7 @@ def import_(
     project: str = typer.Option(None, "--project", "-p",
                                 help="Project label (default LOOPSMITH_PROJECT)"),
     format: str = typer.Option("auto", "--format", "-f",
-                               help="auto | loopsmith | generic"),
+                               help="auto | loopsmith | generic | codex"),
 ) -> None:
     """Import a structured coding-session trace."""
     from loopsmith.core.store import Store

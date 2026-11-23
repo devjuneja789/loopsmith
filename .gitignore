@@ -6,3 +6,8 @@ build/
 .loopsmith/
 dist/
 .env
+.env.*
+!.env.example
+.venv/
+/SKILL.zip
+.DS_Store

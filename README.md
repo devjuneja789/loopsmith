@@ -18,7 +18,76 @@ an OpenAI-compatible model is configured, LoopSmith also compares the current
 guidance with the proposed change on a benchmark pack. Approved changes are
 versioned and can be rolled back.
 
-## Quickstart
+## Daily use with Codex (0.2)
+
+Install Python 3.11 or later. Open [LoopSmith Releases](https://github.com/devjuneja789/loopsmith/releases)
+in your browser. In the **v0.2.0** release, expand **Assets** and download
+both `loopsmith-0.2.0-py3-none-any.whl` and `SKILL.zip`. The wheel contains
+the program. The ZIP contains the instructions Codex uses to operate it.
+These downloads become available when the maintainer publishes the release.
+
+**Windows PowerShell** — assuming the browser saved both files in Downloads:
+
+```powershell
+Set-Location (Join-Path $HOME 'Downloads')
+py -m pip install --user .\loopsmith-0.2.0-py3-none-any.whl
+$skillDir = Join-Path $HOME '.agents\skills\loopsmith'
+Expand-Archive -LiteralPath .\SKILL.zip -DestinationPath $skillDir
+py -m loopsmith.app review --help
+```
+
+**WSL or macOS** — open a terminal in the directory containing the two downloads.
+For macOS this is usually `~/Downloads`. For a Windows browser and a WSL
+terminal it is usually `/mnt/c/Users/<Windows username>/Downloads`.
+Install in the environment where you run Codex:
+
+```sh
+python3 -m venv "$HOME/.local/share/loopsmith/venv"
+"$HOME/.local/share/loopsmith/venv/bin/python" -m pip install ./loopsmith-0.2.0-py3-none-any.whl
+mkdir -p "$HOME/.agents/skills/loopsmith"
+python3 -m zipfile -e SKILL.zip "$HOME/.agents/skills/loopsmith"
+export PATH="$HOME/.local/share/loopsmith/venv/bin:$PATH"
+loopsmith review --help
+```
+
+For future terminal sessions, add the `export PATH` line to your shell profile
+(`~/.bashrc` for Bash or `~/.zshrc` for Zsh). You can also invoke the
+executable at `~/.local/share/loopsmith/venv/bin/loopsmith` directly.
+On Ubuntu, if Python reports that ensurepip is unavailable, install the
+`python3-venv` package and repeat the commands.
+
+Start a fresh Codex session in the root of
+the project you want to teach. Ask:
+
+> $loopsmith, review the Codex rollout at <full path to my JSONL> for reusable command corrections. Show me the evidence and diff.
+
+The CLI can also be invoked as `py -m loopsmith.app` if your Python Scripts
+directory is outside PATH. Select a rollout from your own Codex sessions
+directory (typically `~/.codex/sessions/YYYY/MM/DD/`). The local SQLite
+database contains normalized session data. Review sends no model requests.
+Use one database per repository. Review looks for a short, explicit command
+preference such as “In this repo, use `make test-integration` for integration
+tests instead of running pytest directly”, followed by that exact command
+and a successful shell result. Sessions without that evidence can yield no proposal.
+
+```powershell
+loopsmith review --session "C:\path\to\rollout.jsonl"
+# After reviewing the evidence and accepting static-only approval:
+loopsmith approve <proposal-id> --force
+loopsmith export --format agents --out .
+git diff -- AGENTS.md
+```
+
+Inspect a newly created AGENTS.md directly if Git still lists it as untracked.
+Commit the reviewed AGENTS.md if the team should share it. Start a fresh
+session and try a similar task to check whether the agent follows the guidance.
+To try review with synthetic data, select `examples/traces/codex-command-review.jsonl`.
+
+Maintainers can build both release assets from this checkout with
+`py -m pip wheel --no-deps . --wheel-dir dist/release` and
+`Compress-Archive -LiteralPath SKILL.md -DestinationPath dist/release/SKILL.zip -Force`.
+
+## Hackathon demo
 
 ```powershell
 python --version                              # Python 3.11 or newer

@@ -232,7 +232,7 @@ def build_preference_miner(traces: Iterable[tuple[Trace, list[TraceEvent]]]) -> 
             successes[norm] += 1
             trace_counts.setdefault(norm, set()).add(trace.id)
             evidence_events.setdefault(norm, []).append((trace, ev))
-    if not successes:
+    if len(successes) != 1:
         return []
     top_cmd, count = successes.most_common(1)[0]
     sample = evidence_events[top_cmd][:6]

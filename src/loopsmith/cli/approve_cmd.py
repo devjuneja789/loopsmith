@@ -35,9 +35,15 @@ def approve(
                    "(static gates failed). Re-mine or write a new proposal.",
                    err=True)
         raise typer.Exit(1)
-    if latest is None and not force:
+    if latest is None:
         typer.echo(f"refused: no eval yet -- run `loopsmith eval {proposal_id}` "
-                   "first (or pass --force).", err=True)
+                   "first.", err=True)
+        raise typer.Exit(1)
+    from loopsmith.eval.gates import static_gates
+
+    failures = static_gates(store, proposal).failures()
+    if failures:
+        typer.echo("refused: " + ", ".join(check.reason for check in failures), err=True)
         raise typer.Exit(1)
     if latest is not None and latest.verdict != "promote" and not force:
         typer.echo(f"refused: latest verdict is {latest.verdict}; promotion "

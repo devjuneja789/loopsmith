@@ -1,0 +1,4 @@
+{"type":"session_meta","payload":{"cwd":"/example/project"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"In this repo, use `make test-integration` for integration tests instead of running pytest directly."}]}}
+{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"make test-integration\"}","call_id":"example-call"}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"example-call","output":"Process exited with code 0\nOutput:\nTests passed."}}
